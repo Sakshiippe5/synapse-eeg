@@ -103,19 +103,19 @@ export function classifyMood(raw: BandPowers): MoodResult {
     color: "#8b5cf6", glowColor: "#8b5cf640", valence: "positive",
   };
   if (relaxation > 2.5 && a > 28) return {
-    mood: "Calm & Relaxed", emoji: "😌",
+    mood: "Calm", emoji: "😌",
     description: "Alpha is strong. You are in a peaceful, restful and calm state.",
     confidence: Math.min(99, Math.round(a * 2.5)), dominantBand: "Alpha",
     color: "#00ff88", glowColor: "#00ff8840", valence: "positive",
   };
   if (a > 20 && b > 16 && stress < 1.5) return {
-    mood: "Happy & Content", emoji: "😊",
+    mood: "Happy", emoji: "😊",
     description: "Balanced Alpha-Beta: a hallmark of positive emotional state and wellbeing.",
     confidence: Math.min(99, Math.round((a + b) * 1.3)), dominantBand: "Alpha",
     color: "#10b981", glowColor: "#10b98140", valence: "positive",
   };
   if (g > 18) return {
-    mood: "Highly Creative", emoji: "⚡",
+    mood: "Creative", emoji: "⚡",
     description: "Gamma surge detected. Peak insight, creativity or intense sensory processing.",
     confidence: Math.min(99, Math.round(g * 2.8)), dominantBand: "Gamma",
     color: "#f59e0b", glowColor: "#f59e0b40", valence: "positive",
