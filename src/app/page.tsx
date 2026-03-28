@@ -205,7 +205,7 @@ export default function Home() {
       {/* ── BAND LEGEND ── */}
       <section className="py-12 px-6 max-w-6xl mx-auto">
         <div className="flex items-center gap-4 mb-8">
-          <span className="font-mono text-xs" style={{ color: "#4a6080" }}>// EEG_FREQUENCY_BANDS</span>
+          <span className="font-mono text-xs" style={{ color: "#4a6080" }}>{"// EEG_FREQUENCY_BANDS"}</span>
           <div className="flex-1 h-px" style={{ background: "linear-gradient(90deg, #1a2540, transparent)" }} />
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4">
@@ -225,7 +225,7 @@ export default function Home() {
       {/* ── FEATURES ── */}
       <section className="py-12 px-6 max-w-6xl mx-auto">
         <div className="flex items-center gap-4 mb-8">
-          <span className="font-mono text-xs" style={{ color: "#4a6080" }}>// PLATFORM_FEATURES</span>
+          <span className="font-mono text-xs" style={{ color: "#4a6080" }}>{"// PLATFORM_FEATURES"}</span>
           <div className="flex-1 h-px" style={{ background: "linear-gradient(90deg, #1a2540, transparent)" }} />
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -244,7 +244,7 @@ export default function Home() {
       {/* ── HOW TO USE ── */}
       <section className="py-12 px-6 max-w-6xl mx-auto">
         <div className="flex items-center gap-4 mb-8">
-          <span className="font-mono text-xs" style={{ color: "#4a6080" }}>// QUICK_START</span>
+          <span className="font-mono text-xs" style={{ color: "#4a6080" }}>{"// QUICK_START"}</span>
           <div className="flex-1 h-px" style={{ background: "linear-gradient(90deg, #1a2540, transparent)" }} />
         </div>
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
