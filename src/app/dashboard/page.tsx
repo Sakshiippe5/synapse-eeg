@@ -678,7 +678,7 @@ export default function Dashboard() {
 
           {/* Band Power Bars */}
           <div className="cyber-panel p-4 flex flex-col gap-3">
-            <div className="font-mono text-[10px] tracking-widest" style={{ color: "#4a6080" }}>EEG BAND POWER</div>
+            <div className="font-mono text-[10px] tracking-widest" style={{ color: "#00ff88" }}>EEG BAND POWER</div>
             {BANDS.map(b => {
               const pct = Math.round(norm[b.key] ?? 0);
               const dom = mood?.dominantBand === b.label.split(" ")[1];
@@ -686,12 +686,12 @@ export default function Dashboard() {
                 <div key={b.key}>
                   <div className="flex justify-between mb-1">
                     <div className="flex items-center gap-2">
-                      <span className="font-mono text-xs font-bold w-14" style={{ color: dom ? b.color : "#2a3550" }}>
+                      <span className="font-mono text-xs font-bold w-14" style={{ color: dom ? b.color : "#64748b" }}>
                         {b.label}
                       </span>
-                      <span className="font-mono text-[9px]" style={{ color: "#1a2540" }}>{b.range}</span>
+                      <span className="font-mono text-[9px]" style={{ color: "#4a6080" }}>{b.range}</span>
                     </div>
-                    <span className="font-mono text-xs font-bold" style={{ color: dom ? b.color : "#2a3550" }}>
+                    <span className="font-mono text-xs font-bold" style={{ color: dom ? b.color : "#64748b" }}>
                       {pct}%
                     </span>
                   </div>
@@ -713,7 +713,7 @@ export default function Dashboard() {
 
           {/* Alerts */}
           <div className="cyber-panel p-4">
-            <div className="font-mono text-[10px] tracking-widest mb-2" style={{ color: "#4a6080" }}>ANOMALY ALERTS</div>
+            <div className="font-mono text-[10px] tracking-widest mb-2" style={{ color: "#00ff88" }}>ANOMALY ALERTS</div>
             <div className="flex flex-col gap-2" style={{ maxHeight: 140, overflowY: "auto" }}>
               {alerts.length === 0 ? (
                 <div className="font-mono text-[10px] py-3 text-center" style={{ color: "#1a2540" }}>No anomalies ✓</div>
@@ -828,19 +828,19 @@ export default function Dashboard() {
 
           {/* Mood Reference */}
           <div className="cyber-panel p-4">
-            <div className="font-mono text-[10px] tracking-widest mb-3" style={{ color: "#4a6080" }}>MOOD REFERENCE</div>
-            <div className="grid grid-cols-2 gap-1.5">
+            <div className="font-mono text-[10px] tracking-widest mb-3" style={{ color: "#00ff88" }}>MOOD REFERENCE</div>
+            <div className="grid grid-cols-2 gap-2">
               {MOODS.map((m, i) => (
                 <div
                   key={i}
-                  className="flex items-center gap-1.5 p-1.5 rounded transition-all"
+                  className="flex items-center gap-2 p-2 rounded transition-all"
                   style={{
-                    border: `1px solid ${mood?.mood === m.label ? m.color + "50" : "#1a2540"}`,
-                    background: mood?.mood === m.label ? m.color + "18" : "transparent",
+                    border: `1px solid ${mood?.mood === m.label ? m.color : "#2a3550"}`,
+                    background: mood?.mood === m.label ? m.color + "25" : "#0d1628",
                   }}
                 >
                   <span className="text-sm">{m.emoji}</span>
-                  <span className="font-mono text-[9px]" style={{ color: mood?.mood === m.label ? m.color : "#4a6080" }}>
+                  <span className="font-mono text-[11px] font-bold" style={{ color: mood?.mood === m.label ? m.color : "#94a3b8" }}>
                     {m.label}
                   </span>
                 </div>
@@ -850,7 +850,7 @@ export default function Dashboard() {
 
           {/* Mood Timeline */}
           <div className="cyber-panel p-4">
-            <div className="font-mono text-[10px] tracking-widest mb-3" style={{ color: "#4a6080" }}>MOOD TIMELINE</div>
+            <div className="font-mono text-[10px] tracking-widest mb-3" style={{ color: "#00ff88" }}>MOOD TIMELINE</div>
             <div className="flex flex-col gap-2" style={{ maxHeight: 200, overflowY: "auto" }}>
               {history.length === 0 ? (
                 <div className="font-mono text-[10px] text-center py-4" style={{ color: "#1a2540" }}>No history yet</div>
@@ -858,14 +858,14 @@ export default function Dashboard() {
                 history.map((h, i) => (
                   <div key={i} className="flex items-center gap-2" style={{ opacity: Math.max(0.3, 1 - i * 0.07) }}>
                     <span className="text-sm">{h.mood.emoji}</span>
-                    <span className="font-mono text-[10px] flex-1" style={{ color: "#e0f0ff" }}>{h.mood.mood}</span>
+                    <span className="font-mono text-[10px] flex-1" style={{ color: "#ffffff" }}>{h.mood.mood}</span>
                     <div className="w-12 h-1.5 rounded-full" style={{ background: "#0d1628" }}>
                       <div
                         className="h-full rounded-full"
                         style={{ width: `${h.mood.confidence}%`, background: h.mood.color }}
                       />
                     </div>
-                    <span className="font-mono text-[9px]" style={{ color: "#4a6080" }}>{h.time}</span>
+                    <span className="font-mono text-[9px]" style={{ color: "#64748b" }}>{h.time}</span>
                   </div>
                 ))
               )}
@@ -883,7 +883,7 @@ export default function Dashboard() {
               { label: "SAMPLE RATE", value: connected ? `${samplingRate}Hz` : "—" },
             ].map((s, i) => (
               <div key={i}>
-                <div className="font-mono text-[9px]" style={{ color: "#4a6080" }}>{s.label}</div>
+                <div className="font-mono text-[9px]" style={{ color: "#94a3b8" }}>{s.label}</div>
                 <div className="font-display font-bold text-lg" style={{ color: "#00ff88" }}>{s.value}</div>
               </div>
             ))}
