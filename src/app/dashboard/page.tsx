@@ -195,6 +195,7 @@ export default function Dashboard() {
   // Refs
   const portRef      = useRef<SerialPort | null>(null);
   const readerRef    = useRef<ReadableStreamDefaultReader<Uint8Array> | null>(null);
+  const writerRef    = useRef<WritableStreamDefaultWriter<Uint8Array> | null>(null);
   const runningRef   = useRef(false);
   const simRef       = useRef<ReturnType<typeof setInterval> | null>(null);
   const simTRef      = useRef(0);
@@ -280,99 +281,70 @@ export default function Dashboard() {
   }, []);
 
   // ── Real serial connect ──────────────────────────────────────────────────
+  // ── CONNECT (matches NeuroWave exactly) ─────────────────────────────────
   const connect = useCallback(async () => {
     if (!("serial" in navigator)) {
-      toast.error("Use Chrome or Edge browser.");
+      toast.error("Use Chrome or Edge browser — Web Serial not supported here.");
       return;
     }
     setConnecting(true);
     try {
-      const savedRaw = localStorage.getItem("synapse_devs");
-      const saved: SavedDevice[] = savedRaw ? JSON.parse(savedRaw) : [];
-      const available = await navigator.serial.getPorts();
+      // Step 1: Get port
+      const port = await navigator.serial.requestPort();
+      const info = port.getInfo();
+      const board = BoardsList.find(b => b.field_pid === info.usbProductId);
+      const baudRate    = board?.baud_Rate      ?? 115200;
+      const serialTimeout = board?.serial_timeout ?? 2000;
 
-      let port: SerialPort | null = null;
-      if (saved.length && available.length) {
-        port = available.find(p => saved.some(s => s.pid === p.getInfo().usbProductId)) ?? null;
-      }
-
-      let baud    = 115200;
-      let timeout = 2000;
-
-      if (!port) {
-        port = await navigator.serial.requestPort();
-        const info  = port.getInfo();
-        const board = BoardsList.find(b => b.field_pid === info.usbProductId);
-        baud    = board?.baud_Rate      ?? 115200;
-        timeout = board?.serial_timeout ?? 2000;
-      } else {
-        const info = port.getInfo();
-        const s    = saved.find(s => s.pid === info.usbProductId);
-        baud    = s?.baud    ?? 115200;
-        timeout = s?.timeout ?? 2000;
-      }
-
-      await port.open({ baudRate: baud });
+      await port.open({ baudRate });
       portRef.current = port;
 
-      // Handshake
-      let dName = "EEG Device";
-      let dSR   = 250;
-      let dCh   = 1;
-      let dBits = 10;
-
-      if (port.writable) {
-        const writer = port.writable.getWriter();
-        setTimeout(() => writer.write(new TextEncoder().encode("WHORU\n")), 100);
-
-        let buf = "";
-        if (port.readable) {
-          const r   = port.readable.getReader();
-          const tid = setTimeout(() => r.cancel(), timeout + 500);
-          try {
-            while (true) {
-              const { value, done } = await r.read();
-              if (done) break;
-              buf += new TextDecoder().decode(value);
-              if (buf.includes("\n")) break;
-            }
-          } catch { /* timeout cancel */ }
-          clearTimeout(tid);
-          r.releaseLock();
-        }
-
-        const resp  = buf.trim().split("\n").pop() ?? "";
-        dName = resp.match(/[A-Za-z0-9\-_ ]+$/)?.[0]?.trim() || "EEG Device";
-
-        const board =
-          BoardsList.find(b => b.chords_id.toLowerCase() === dName.toLowerCase()) ??
-          BoardsList.find(b => b.field_pid === port!.getInfo().usbProductId);
-
-        if (board) {
-          dSR   = board.sampling_rate;
-          dCh   = board.channel_count;
-          dBits = board.adc_resolution;
-          baud  = board.baud_Rate;
-          timeout = board.serial_timeout;
-        }
-
-        const info = port.getInfo();
-        const upd: SavedDevice[] = [
-          ...saved.filter(s => s.pid !== info.usbProductId),
-          { pid: info.usbProductId ?? 0, baud, timeout },
-        ];
-        localStorage.setItem("synapse_devs", JSON.stringify(upd));
-
-        setTimeout(() => {
-          writer.write(new TextEncoder().encode("START\n"));
-          writer.releaseLock();
-        }, timeout);
-
-        toast.success(`Connected: ${dName}`, {
-          description: `${dSR}Hz · ${dCh}ch · ${dBits}-bit`,
-        });
+      if (!port.readable || !port.writable) {
+        toast.error("Port not readable/writable");
+        return;
       }
 
+      // Step 2: Get reader and writer — keep BOTH open (like NeuroWave)
+      const reader = port.readable.getReader();
+      const writer = port.writable.getWriter();
+      readerRef.current = reader;
+      writerRef.current = writer;
+
+      // Step 3: Send WHORU after serialTimeout (exactly like NeuroWave)
+      const whoMsg = new TextEncoder().encode("WHORU\n");
+      setTimeout(() => writer.write(whoMsg), serialTimeout);
+
+      // Step 4: Read the response (board name)
+      let buf = "";
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        if (value) {
+          buf += new TextDecoder().decode(value);
+          if (buf.includes("\n")) break;
+        }
+      }
+
+      // Step 5: Parse board name and match config
+      const response = buf.trim().split("\n").pop() ?? "";
+      const dName = response.match(/[A-Za-z0-9\-_\s]+$/)?.[0]?.trim() || "EEG Device";
+      const matchedBoard =
+        BoardsList.find(b => b.chords_id.toLowerCase() === dName.toLowerCase()) ??
+        BoardsList.find(b => b.field_pid === info.usbProductId);
+
+      const dSR   = matchedBoard?.sampling_rate  ?? 250;
+      const dCh   = matchedBoard?.channel_count  ?? 1;
+      const dBits = matchedBoard?.adc_resolution ?? 10;
+
+      // Step 6: Send START after 2000ms (exactly like NeuroWave)
+      const startMsg = new TextEncoder().encode("START\n");
+      setTimeout(() => writer.write(startMsg), 2000);
+
+      toast.success(`Connected: ${dName}`, {
+        description: `${dSR}Hz · ${dCh}ch · ${dBits}-bit`,
+      });
+
+      // Step 7: Set state
       setDeviceName(dName);
       setSamplingRate(dSR);
       setChannelCount(dCh);
@@ -382,56 +354,9 @@ export default function Dashboard() {
       samplesRef.current = Array.from({ length: dCh }, () => []);
       setSamples(samplesRef.current.map(() => []));
 
-      // Binary read loop
-      const PLEN = dCh * 2 + HDR + 1;
-      const raw: number[] = [];
+      // Step 8: Start reading data (separate function like NeuroWave)
+      readData(dCh, dBits, dSR);
 
-      const hp  = Array.from({ length: dCh }, () => { const f = new HighPassFilter(); f.setSamplingRate(dSR); return f; });
-      const exg = Array.from({ length: dCh }, () => { const f = new EXGFilter();     f.setbits(dBits.toString(), dSR); return f; });
-      const nf  = Array.from({ length: dCh }, () => { const f = new Notch();         f.setbits(dSR); return f; });
-
-      if (port.readable) {
-        const reader = port.readable.getReader();
-        readerRef.current = reader;
-
-        (async () => {
-          try {
-            while (runningRef.current) {
-              const { value, done } = await reader.read();
-              if (done) break;
-              if (value) raw.push(...Array.from(value));
-
-              // Parse binary packets
-              while (raw.length >= PLEN) {
-                const si = raw.findIndex((b, i) => b === SYNC1 && raw[i + 1] === SYNC2);
-                if (si === -1) { raw.length = 0; break; }
-                if (si + PLEN > raw.length) break;
-                if (raw[si + PLEN - 1] !== END) { raw.splice(0, si + 1); continue; }
-
-                const pkt  = raw.slice(si, si + PLEN);
-                const vals: number[] = [];
-
-                for (let ch = 0; ch < dCh; ch++) {
-                  const hi = pkt[ch * 2 + HDR];
-                  const lo = pkt[ch * 2 + HDR + 1];
-                  let v    = (hi << 8) | lo;
-                  v = hp[ch].process(v);
-                  v = exg[ch].process(v, 4);   // 4 = EEG mode
-                  v = nf[ch].process(v, notch);
-                  vals.push(v);
-                }
-
-                pushSample(vals);
-                raw.splice(0, si + PLEN);
-              }
-            }
-          } catch (e) {
-            if (runningRef.current) toast.error("Device disconnected.");
-          } finally {
-            reader.releaseLock();
-          }
-        })();
-      }
     } catch (e: unknown) {
       const err = e as { name?: string; message?: string };
       if (err?.name !== "NotFoundError") {
@@ -439,33 +364,116 @@ export default function Dashboard() {
       }
     }
     setConnecting(false);
-  }, [pushSample, notch]);
+  }, []);
 
-  // ── Disconnect ───────────────────────────────────────────────────────────
-  const disconnect = useCallback(async () => {
+  // ── READ DATA (matches NeuroWave readData exactly) ────────────────────────
+  const readData = useCallback((dCh: number, dBits: number, dSR: number) => {
+    const HEADER_LENGTH = 3;
+    const PACKET_LENGTH = dCh * 2 + HEADER_LENGTH + 1;
+    const SYNC_BYTE1 = 0xc7;
+    const SYNC_BYTE2 = 0x7c;
+    const END_BYTE   = 0x01;
+
+    // Filters
+    const notchFilters = Array.from({ length: dCh }, () => { const f = new Notch();         f.setbits(dSR);                         return f; });
+    const exgFilters   = Array.from({ length: dCh }, () => { const f = new EXGFilter();     f.setbits(dBits.toString(), dSR);       return f; });
+    const hpFilters    = Array.from({ length: dCh }, () => { const f = new HighPassFilter(); f.setSamplingRate(dSR);                 return f; });
+
+    // Module-level buffer (like NeuroWave's buffer array)
+    const buffer: number[] = [];
+
+    const run = async () => {
+      try {
+        while (runningRef.current) {
+          const streamData = await readerRef.current?.read();
+          if (streamData?.done) break;
+          if (streamData?.value) {
+            buffer.push(...Array.from(streamData.value));
+          }
+
+          // Process all complete packets in buffer
+          while (buffer.length >= PACKET_LENGTH) {
+            const syncIndex = buffer.findIndex(
+              (byte, index) => byte === SYNC_BYTE1 && buffer[index + 1] === SYNC_BYTE2
+            );
+
+            if (syncIndex === -1) { buffer.length = 0; break; }
+
+            if (syncIndex + PACKET_LENGTH <= buffer.length) {
+              const endByteIndex = syncIndex + PACKET_LENGTH - 1;
+
+              if (
+                buffer[syncIndex]     === SYNC_BYTE1 &&
+                buffer[syncIndex + 1] === SYNC_BYTE2 &&
+                buffer[endByteIndex]  === END_BYTE
+              ) {
+                // Valid packet — extract channel values
+                const packet = buffer.slice(syncIndex, syncIndex + PACKET_LENGTH);
+                const vals: number[] = [];
+
+                for (let ch = 0; ch < dCh; ch++) {
+                  const hi  = packet[ch * 2 + HEADER_LENGTH];
+                  const lo  = packet[ch * 2 + HEADER_LENGTH + 1];
+                  const raw = (hi << 8) | lo;
+
+                  const filtered = notchFilters[ch].process(
+                    exgFilters[ch].process(
+                      hpFilters[ch].process(raw),
+                      4  // EEG filter mode
+                    ),
+                    notch
+                  );
+                  vals.push(filtered);
+                }
+
+                // Push to display
+                if (!pausedRef.current) {
+                  vals.forEach((v, i) => {
+                    if (!samplesRef.current[i]) samplesRef.current[i] = [];
+                    samplesRef.current[i] = [...samplesRef.current[i].slice(-DISP), v];
+                  });
+                  setSamples(samplesRef.current.map(ch => [...ch]));
+                  if (recording) csvRef.current.push(vals);
+                }
+
+                buffer.splice(0, endByteIndex + 1);
+              } else {
+                buffer.splice(0, syncIndex + 1);
+              }
+            } else {
+              break;
+            }
+          }
+        }
+      } catch (e) {
+        if (runningRef.current) toast.error("Device disconnected.");
+      } finally {
+        await disconnectDevice();
+      }
+    };
+
+    run();
+  }, [notch, recording]);
+
+  // ── DISCONNECT ────────────────────────────────────────────────────────────
+  const disconnectDevice = useCallback(async () => {
     runningRef.current = false;
     try {
-      if (readerRef.current) {
-        await readerRef.current.cancel();
-        readerRef.current = null;
+      if (readerRef.current) { await readerRef.current.cancel(); readerRef.current = null; }
+      if (writerRef.current) {
+        await writerRef.current.write(new TextEncoder().encode("STOP\n"));
+        writerRef.current.releaseLock();
+        writerRef.current = null;
       }
-      if (portRef.current?.writable) {
-        const w = portRef.current.writable.getWriter();
-        await w.write(new TextEncoder().encode("STOP\n"));
-        w.releaseLock();
-      }
-      if (portRef.current) {
-        await portRef.current.close();
-        portRef.current = null;
-      }
-    } catch { /* ignore close errors */ }
-
-    setConnected(false);
-    setDeviceName("");
-    samplesRef.current = [[]];
-    setSamples([[]]);
+      if (portRef.current) { await portRef.current.close(); portRef.current = null; }
+    } catch { /* ignore */ }
+    setConnected(false); setDeviceName("");
+    samplesRef.current = [[]]; setSamples([[]]);
     toast.info("Disconnected.");
   }, []);
+
+  const disconnect = disconnectDevice;
+
 
   // ── CSV Export ───────────────────────────────────────────────────────────
   const exportCSV = useCallback(() => {
