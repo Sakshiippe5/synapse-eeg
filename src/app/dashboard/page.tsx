@@ -209,16 +209,56 @@ export default function Dashboard() {
   useEffect(() => { srRef.current = samplingRate; }, [samplingRate]);
 
   // ── Analysis loop ─────────────────────────────────────────────────────────
+  // Runs every 500ms but mood only finalised after 30s of averaging
   useEffect(() => {
+    // Rolling band power accumulator for 30s averaging
+    const bandAccumulator: BandPowers[] = [];
+    const MOOD_WINDOW = 60; // 60 × 500ms = 30 seconds of data
+
     const id = setInterval(() => {
       const ch0 = samplesRef.current[0] ?? [];
-      if (ch0.length < 32) return;
+      if (ch0.length < FFT_SIZE) return;
 
-      const mags = computeFFTMagnitudes(ch0, FFT_SIZE);
+      // 1. DC-remove: subtract mean so signal is centred around 0
+      const mean = ch0.reduce((a, b) => a + b, 0) / ch0.length;
+      const centred = ch0.map(v => v - mean);
+
+      // 2. FFT + band powers on centred signal
+      const mags = computeFFTMagnitudes(centred, FFT_SIZE);
       const raw  = computeBandPowers(mags, srRef.current);
-      setBands(raw);
 
-      const m = classifyMood(raw);
+      // 3. Accumulate band powers for averaging
+      bandAccumulator.push(raw);
+      if (bandAccumulator.length > MOOD_WINDOW) bandAccumulator.shift();
+
+      // 4. Average band powers over window
+      const avgBands: BandPowers = {
+        delta: bandAccumulator.reduce((s, b) => s + b.delta, 0) / bandAccumulator.length,
+        theta: bandAccumulator.reduce((s, b) => s + b.theta, 0) / bandAccumulator.length,
+        alpha: bandAccumulator.reduce((s, b) => s + b.alpha, 0) / bandAccumulator.length,
+        beta:  bandAccumulator.reduce((s, b) => s + b.beta,  0) / bandAccumulator.length,
+        gamma: bandAccumulator.reduce((s, b) => s + b.gamma, 0) / bandAccumulator.length,
+      };
+      setBands(avgBands);
+
+      // 5. Show "Analysing..." until we have 30s of data
+      const readyPct = Math.min(100, Math.round((bandAccumulator.length / MOOD_WINDOW) * 100));
+      if (bandAccumulator.length < MOOD_WINDOW) {
+        setMood({
+          mood: `Analysing... ${readyPct}%`,
+          emoji: "⏳",
+          description: `Collecting 30 seconds of data for accurate mood detection. ${MOOD_WINDOW - bandAccumulator.length} samples remaining.`,
+          confidence: readyPct,
+          dominantBand: "",
+          color: "#4a6080",
+          glowColor: "#4a608040",
+          valence: "neutral",
+        });
+        return;
+      }
+
+      // 6. Classify mood on averaged bands
+      const m = classifyMood(avgBands);
       setMood(m);
 
       moodCntRef.current++;
@@ -227,6 +267,7 @@ export default function Dashboard() {
         setHistory(prev => [{ mood: m, time: t }, ...prev].slice(0, 30));
       }
 
+      // 7. Anomaly detection
       const anom = detectAnomaly(ch0);
       setAnomaly(anom);
       if (anom) {
