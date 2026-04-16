@@ -213,7 +213,7 @@ export default function Dashboard() {
   useEffect(() => {
     // Rolling band power accumulator for 30s averaging
     const bandAccumulator: BandPowers[] = [];
-    const MOOD_WINDOW = 60; // 60 × 500ms = 30 seconds of data
+    const MOOD_WINDOW = 20; // 20 × 500ms = 10 seconds of data
 
     const id = setInterval(() => {
       const ch0 = samplesRef.current[0] ?? [];
@@ -247,7 +247,7 @@ export default function Dashboard() {
         setMood({
           mood: `Analysing... ${readyPct}%`,
           emoji: "⏳",
-          description: `Collecting 30 seconds of data for accurate mood detection. ${MOOD_WINDOW - bandAccumulator.length} samples remaining.`,
+          description: `Collecting 10 seconds of data for accurate mood detection. ${MOOD_WINDOW - bandAccumulator.length} samples remaining.`,
           confidence: readyPct,
           dominantBand: "",
           color: "#4a6080",
@@ -818,14 +818,14 @@ export default function Dashboard() {
             </div>
 
             {connected ? (
-              samples.map((ch, i) => (
+              samples.slice(0, 1).map((ch, i) => (
                 <EEGCanvas
                   key={i}
                   samples={ch}
-                  color={COLORS[i % COLORS.length]}
-                  label={`CH${i + 1}`}
+                  color={COLORS[0]}
+                  label="CH1 — EEG"
                   anomaly={anomaly && i === 0}
-                  height={Math.max(70, Math.floor(320 / Math.max(1, samples.length)))}
+                  height={320}
                 />
               ))
             ) : (
