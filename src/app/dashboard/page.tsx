@@ -212,10 +212,10 @@ const FreqGraph: React.FC<{
       ctx.fillStyle = isActive ? r.color + "25" : r.color + "08";
       ctx.fillRect(x1, 0, x2 - x1, PLOT_H);
       // Band label at top
-      ctx.fillStyle = isActive ? r.color : r.color + "60";
-      ctx.font = `bold 9px 'Share Tech Mono'`;
+      ctx.fillStyle = isActive ? r.color : r.color + "80";
+      ctx.font = `bold 11px 'Share Tech Mono'`;
       ctx.textAlign = "center";
-      ctx.fillText(r.label, (x1 + x2) / 2, 10);
+      ctx.fillText(r.label, (x1 + x2) / 2, 14);
     });
 
     // Dividers between bands
@@ -264,6 +264,22 @@ const FreqGraph: React.FC<{
 
     const maxMag = Math.max(...smoothed.slice(1), 0.001);
 
+    // Y-axis amplitude ticks
+    const tickValues = [0.25, 0.5, 0.75, 1.0];
+    tickValues.forEach(t => {
+      const y = PLOT_H - t * PLOT_H * 0.88;
+      ctx.fillStyle = "#4a6080";
+      ctx.font = "bold 9px 'Share Tech Mono'";
+      ctx.textAlign = "left";
+      ctx.fillText(`${Math.round(t * 100)}%`, 4, y - 2);
+      // tick line
+      ctx.strokeStyle = "#1a2540";
+      ctx.lineWidth = 0.5;
+      ctx.setLineDash([3, 3]);
+      ctx.beginPath(); ctx.moveTo(20, y); ctx.lineTo(W, y); ctx.stroke();
+      ctx.setLineDash([]);
+    });
+
     // Draw filled area under curve
     const activeColor = mood?.color ?? "#00ff88";
     const grad = ctx.createLinearGradient(0, 0, 0, PLOT_H);
@@ -301,27 +317,21 @@ const FreqGraph: React.FC<{
     // X-axis frequency labels
     [0, 5, 10, 15, 20, 25, 30, 35, 40, 45].forEach(f => {
       const x = freqToX(f);
-      ctx.fillStyle = "#4a6080";
-      ctx.font = "8px 'Share Tech Mono'";
+      ctx.fillStyle = "#94a3b8";
+      ctx.font = "bold 10px 'Share Tech Mono'";
       ctx.textAlign = "center";
-      ctx.fillText(`${f}`, x, H - 4);
+      ctx.fillText(`${f}Hz`, x, H - 4);
     });
 
     // Y-axis label
     ctx.save();
-    ctx.translate(8, PLOT_H / 2);
+    ctx.translate(12, PLOT_H / 2);
     ctx.rotate(-Math.PI / 2);
-    ctx.fillStyle = "#2a3550";
-    ctx.font = "8px 'Share Tech Mono'";
+    ctx.fillStyle = "#64748b";
+    ctx.font = "bold 10px 'Share Tech Mono'";
     ctx.textAlign = "center";
     ctx.fillText("AMPLITUDE", 0, 0);
     ctx.restore();
-
-    // X-axis label
-    ctx.fillStyle = "#2a3550";
-    ctx.font = "8px 'Share Tech Mono'";
-    ctx.textAlign = "center";
-    ctx.fillText("FREQUENCY (Hz)", W / 2, H - 4);
 
   }, [samples, samplingRate, mood]);
 
@@ -329,7 +339,7 @@ const FreqGraph: React.FC<{
     <canvas
       ref={canvasRef}
       className="w-full block"
-      style={{ height: 160 }}
+      style={{ height: 340 }}
     />
   );
 };
