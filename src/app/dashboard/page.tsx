@@ -32,15 +32,11 @@ const BANDS: { key: keyof BandPowers; label: string; range: string; color: strin
 
 const COLORS = ["#00ff88","#00d4ff","#8b5cf6","#f59e0b","#ef4444","#10b981","#ff0080","#6366f1"];
 
-const MOODS: { emoji: string; label: string; color: string }[] = [
-  { emoji: "😴", label: "Deep Sleep", color: "#6366f1" },
-  { emoji: "🧘", label: "Meditative",  color: "#8b5cf6" },
-  { emoji: "😌", label: "Calm",         color: "#00ff88" },
-  { emoji: "😊", label: "Happy",        color: "#10b981" },
-  { emoji: "🎯", label: "Focused",      color: "#00d4ff" },
-  { emoji: "😰", label: "Stressed",     color: "#ef4444" },
-  { emoji: "⚡", label: "Creative",     color: "#f59e0b" },
-  { emoji: "😐", label: "Neutral",      color: "#4a6080" },
+const MOODS: { emoji: string; label: string; color: string; freq: string; band: string }[] = [
+  { emoji: "😴", label: "Deep Sleep",   color: "#6366f1", freq: "0.5–5 Hz",  band: "Delta" },
+  { emoji: "🎨", label: "Creative",     color: "#00ff88", freq: "5–12 Hz",   band: "Theta/Alpha" },
+  { emoji: "🎯", label: "Focused",      color: "#00d4ff", freq: "12–30 Hz",  band: "Beta" },
+  { emoji: "⚡", label: "Highly Alert", color: "#f59e0b", freq: ">30 Hz",    band: "Gamma" },
 ];
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -166,6 +162,178 @@ const EEGCanvas: React.FC<EEGCanvasProps> = ({
 };
 
 // ─── Dashboard ────────────────────────────────────────────────────────────────
+// ── Frequency vs Amplitude Graph ─────────────────────────────────────────
+const FreqGraph: React.FC<{
+  samples: number[];
+  samplingRate: number;
+  mood: MoodResult | null;
+}> = ({ samples, samplingRate, mood }) => {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  useEffect(() => {
+    const c = canvasRef.current;
+    if (!c) return;
+    const ctx = c.getContext("2d");
+    if (!ctx) return;
+    const dpr = window.devicePixelRatio || 1;
+    c.width  = c.offsetWidth  * dpr;
+    c.height = c.offsetHeight * dpr;
+    ctx.scale(dpr, dpr);
+    const W = c.offsetWidth;
+    const H = c.offsetHeight;
+    const PLOT_H = H - 28; // leave room for x-axis labels
+    ctx.clearRect(0, 0, W, H);
+
+    // Grid
+    ctx.strokeStyle = "#0d1628";
+    ctx.lineWidth = 1;
+    for (let i = 0; i <= 5; i++) {
+      const y = (i / 5) * PLOT_H;
+      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+    }
+
+    // Band regions with color fills
+    const freqRes = samplingRate / 256;
+    const maxFreq = 45;
+    const freqToX = (f: number) => (f / maxFreq) * W;
+
+    const regions = [
+      { lo: 0.5, hi: 5,  color: "#6366f1", label: "δ",  mood: "Deep Sleep"   },
+      { lo: 5,   hi: 8,  color: "#8b5cf6", label: "θ",  mood: "Creative"     },
+      { lo: 8,   hi: 12, color: "#00ff88", label: "α",  mood: "Creative"     },
+      { lo: 12,  hi: 30, color: "#00d4ff", label: "β",  mood: "Focused"      },
+      { lo: 30,  hi: 45, color: "#f59e0b", label: "γ",  mood: "Highly Alert" },
+    ];
+
+    regions.forEach(r => {
+      const x1 = freqToX(r.lo);
+      const x2 = freqToX(r.hi);
+      const isActive = mood?.mood === r.mood;
+      ctx.fillStyle = isActive ? r.color + "25" : r.color + "08";
+      ctx.fillRect(x1, 0, x2 - x1, PLOT_H);
+      // Band label at top
+      ctx.fillStyle = isActive ? r.color : r.color + "60";
+      ctx.font = `bold 9px 'Share Tech Mono'`;
+      ctx.textAlign = "center";
+      ctx.fillText(r.label, (x1 + x2) / 2, 10);
+    });
+
+    // Dividers between bands
+    regions.forEach(r => {
+      ctx.strokeStyle = "#1a2540";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(freqToX(r.hi), 0);
+      ctx.lineTo(freqToX(r.hi), PLOT_H);
+      ctx.stroke();
+    });
+
+    if (samples.length < 32) {
+      ctx.fillStyle = "#2a3550";
+      ctx.font = "11px 'Share Tech Mono'";
+      ctx.textAlign = "center";
+      ctx.fillText("AWAITING SIGNAL", W / 2, PLOT_H / 2);
+      return;
+    }
+
+    // Compute FFT magnitudes (50 bins = 0–45Hz at 250Hz SR)
+    const FFT_N = 256;
+    const n = Math.min(samples.length, FFT_N);
+    const mean = samples.slice(-n).reduce((a, b) => a + b, 0) / n;
+    const DISPLAY_BINS = Math.floor((maxFreq / (samplingRate / 2)) * (FFT_N / 2));
+    const mags: number[] = new Array(DISPLAY_BINS).fill(0);
+
+    // Compute DFT for display bins only
+    for (let k = 1; k < DISPLAY_BINS; k++) {
+      let rk = 0, ik = 0;
+      for (let t = 0; t < n; t++) {
+        const angle = (2 * Math.PI * k * t) / FFT_N;
+        const sample = (samples[samples.length - n + t] - mean) *
+          (0.5 - 0.5 * Math.cos((2 * Math.PI * t) / (n - 1)));
+        rk += sample * Math.cos(angle);
+        ik -= sample * Math.sin(angle);
+      }
+      mags[k] = Math.sqrt(rk * rk + ik * ik) / FFT_N;
+    }
+
+    // Smooth magnitudes
+    const smoothed = [...mags];
+    for (let i = 2; i < DISPLAY_BINS - 2; i++) {
+      smoothed[i] = (mags[i-2] + mags[i-1] + mags[i] + mags[i+1] + mags[i+2]) / 5;
+    }
+
+    const maxMag = Math.max(...smoothed.slice(1), 0.001);
+
+    // Draw filled area under curve
+    const activeColor = mood?.color ?? "#00ff88";
+    const grad = ctx.createLinearGradient(0, 0, 0, PLOT_H);
+    grad.addColorStop(0, activeColor + "80");
+    grad.addColorStop(1, activeColor + "10");
+
+    ctx.beginPath();
+    ctx.moveTo(freqToX(freqRes), PLOT_H);
+    for (let k = 1; k < DISPLAY_BINS; k++) {
+      const freq = k * freqRes;
+      const x = freqToX(freq);
+      const y = PLOT_H - (smoothed[k] / maxMag) * PLOT_H * 0.88;
+      k === 1 ? ctx.lineTo(x, y) : ctx.lineTo(x, y);
+    }
+    ctx.lineTo(freqToX((DISPLAY_BINS - 1) * freqRes), PLOT_H);
+    ctx.closePath();
+    ctx.fillStyle = grad;
+    ctx.fill();
+
+    // Draw line on top
+    ctx.beginPath();
+    ctx.strokeStyle = activeColor;
+    ctx.lineWidth = 2;
+    ctx.shadowColor = activeColor;
+    ctx.shadowBlur = 6;
+    for (let k = 1; k < DISPLAY_BINS; k++) {
+      const freq = k * freqRes;
+      const x = freqToX(freq);
+      const y = PLOT_H - (smoothed[k] / maxMag) * PLOT_H * 0.88;
+      k === 1 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+
+    // X-axis frequency labels
+    [0, 5, 10, 15, 20, 25, 30, 35, 40, 45].forEach(f => {
+      const x = freqToX(f);
+      ctx.fillStyle = "#4a6080";
+      ctx.font = "8px 'Share Tech Mono'";
+      ctx.textAlign = "center";
+      ctx.fillText(`${f}`, x, H - 4);
+    });
+
+    // Y-axis label
+    ctx.save();
+    ctx.translate(8, PLOT_H / 2);
+    ctx.rotate(-Math.PI / 2);
+    ctx.fillStyle = "#2a3550";
+    ctx.font = "8px 'Share Tech Mono'";
+    ctx.textAlign = "center";
+    ctx.fillText("AMPLITUDE", 0, 0);
+    ctx.restore();
+
+    // X-axis label
+    ctx.fillStyle = "#2a3550";
+    ctx.font = "8px 'Share Tech Mono'";
+    ctx.textAlign = "center";
+    ctx.fillText("FREQUENCY (Hz)", W / 2, H - 4);
+
+  }, [samples, samplingRate, mood]);
+
+  return (
+    <canvas
+      ref={canvasRef}
+      className="w-full block"
+      style={{ height: 160 }}
+    />
+  );
+};
+
 export default function Dashboard() {
   // Connection state
   const [connected,    setConnected]    = useState(false);
@@ -839,59 +1007,65 @@ export default function Dashboard() {
             )}
           </div>
 
-          {/* FFT Spectrum */}
+          {/* FFT Frequency vs Amplitude Graph */}
           <div className="cyber-panel p-4">
-            <div className="font-mono text-[10px] tracking-widest mb-3" style={{ color: "#4a6080" }}>
-              FFT FREQUENCY SPECTRUM
-            </div>
-            <div className="flex items-end gap-1.5" style={{ height: 80 }}>
-              {BANDS.map(b => {
-                const pct = norm[b.key] ?? 0;
-                const dom = mood?.dominantBand === b.label.split(" ")[1];
-                return (
-                  <div key={b.key} className="flex-1 flex flex-col items-center gap-1.5">
-                    <div
-                      className="w-full rounded-t transition-all duration-500"
-                      style={{
-                        height: `${Math.max(4, (pct / 100) * 64)}px`,
-                        background: b.color,
-                        opacity: dom ? 1 : 0.3,
-                        boxShadow: dom ? `0 0 12px ${b.color}` : "none",
-                      }}
-                    />
-                    <span className="font-mono text-[8px]" style={{ color: b.color }}>
-                      {b.label.split(" ")[0]}
-                    </span>
-                    <span className="font-mono text-[8px]" style={{ color: "#2a3550" }}>
-                      {Math.round(pct)}%
-                    </span>
+            <div className="flex items-center justify-between mb-2">
+              <div className="font-mono text-[10px] tracking-widest" style={{ color: "#00ff88" }}>
+                FREQUENCY vs AMPLITUDE
+              </div>
+              <div className="flex items-center gap-3">
+                {[
+                  { label: "δ Deep Sleep", color: "#6366f1" },
+                  { label: "θ/α Creative", color: "#00ff88" },
+                  { label: "β Focused",    color: "#00d4ff" },
+                  { label: "γ Alert",      color: "#f59e0b" },
+                ].map((l, i) => (
+                  <div key={i} className="flex items-center gap-1">
+                    <div className="w-2 h-2 rounded-full" style={{ background: l.color }} />
+                    <span className="font-mono text-[8px]" style={{ color: "#4a6080" }}>{l.label}</span>
                   </div>
-                );
-              })}
+                ))}
+              </div>
             </div>
+            <FreqGraph
+              samples={samples[0] ?? []}
+              samplingRate={samplingRate}
+              mood={mood}
+            />
           </div>
         </div>
 
         {/* ── RIGHT: Mood Guide + History + Stats ── */}
         <div className="lg:col-span-1 flex flex-col gap-3">
 
-          {/* Mood Reference */}
+                    {/* Mood Reference */}
           <div className="cyber-panel p-4">
             <div className="font-mono text-[10px] tracking-widest mb-3" style={{ color: "#00ff88" }}>MOOD REFERENCE</div>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="flex flex-col gap-2">
               {MOODS.map((m, i) => (
-                <div
-                  key={i}
-                  className="flex items-center gap-2 p-2 rounded transition-all"
+                <div key={i} className="flex items-center gap-3 p-3 rounded transition-all"
                   style={{
                     border: `1px solid ${mood?.mood === m.label ? m.color : "#2a3550"}`,
                     background: mood?.mood === m.label ? m.color + "25" : "#0d1628",
-                  }}
-                >
-                  <span className="text-sm">{m.emoji}</span>
-                  <span className="font-mono text-[11px] font-bold" style={{ color: mood?.mood === m.label ? m.color : "#94a3b8" }}>
-                    {m.label}
-                  </span>
+                    boxShadow: mood?.mood === m.label ? `0 0 12px ${m.color}50` : "none",
+                  }}>
+                  <span className="text-2xl leading-none">{m.emoji}</span>
+                  <div className="flex-1">
+                    <div className="font-mono text-[12px] font-bold"
+                      style={{ color: mood?.mood === m.label ? m.color : "#94a3b8" }}>
+                      {m.label}
+                    </div>
+                    <div className="font-mono text-[9px] mt-0.5"
+                      style={{ color: mood?.mood === m.label ? m.color + "cc" : "#4a6080" }}>
+                      {m.band} · {m.freq}
+                    </div>
+                  </div>
+                  {mood?.mood === m.label && (
+                    <div className="font-mono text-[10px] font-bold px-2 py-1 rounded"
+                      style={{ background: m.color + "30", color: m.color }}>
+                      ACTIVE
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
